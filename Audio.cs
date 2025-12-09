@@ -153,6 +153,15 @@ namespace CWExpert
             bool retval = false;
             try
             {
+                // Check if PA19 is initialized
+                if (!PA19.IsInitialized)
+                {
+                    MessageBox.Show("PortAudio (PA19) is not initialized. Cannot start audio stream.\n\n" +
+                        "Please check the initialization error messages that were displayed when the application started.",
+                        "Audio Not Available", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
+                
                 retval = StartAudio(ref callback, (uint)block_size, sample_rate,
                     host, input_dev, output_dev, num_channels, 0, latency);
                 return true;
@@ -170,8 +179,13 @@ namespace CWExpert
         {
             try
             {
+                Debug.WriteLine(string.Format("StartAudio: host={0}, in_dev={1}, out_dev={2}, channels={3}, sample_rate={4}, block_size={5}, latency={6}ms",
+                    host_api_index, input_dev_index, output_dev_index, num_channels, sample_rate, block_size, latency_ms));
+                
                 int in_dev = PA19.PA_HostApiDeviceIndexToDeviceIndex(host_api_index, input_dev_index);
                 int out_dev = PA19.PA_HostApiDeviceIndexToDeviceIndex(host_api_index, output_dev_index);
+                
+                Debug.WriteLine(string.Format("Resolved device indices: in_dev={0}, out_dev={1}", in_dev, out_dev));
 
                 PA19.PaStreamParameters inparam = new PA19.PaStreamParameters();
                 PA19.PaStreamParameters outparam = new PA19.PaStreamParameters();
@@ -197,7 +211,34 @@ namespace CWExpert
 
                 if (error != 0)
                 {
-                    MessageBox.Show(PA19.PA_GetErrorText(error), "PortAudio Error",
+                    string errorMsg = string.Format("Failed to open audio stream.\n\n" +
+                        "Error Code: {0}\n" +
+                        "Error Message: {1}\n\n" +
+                        "Parameters:\n" +
+                        "  Host API: {2}\n" +
+                        "  Input Device: {3} (resolved to {4})\n" +
+                        "  Output Device: {5} (resolved to {6})\n" +
+                        "  Channels: {7}\n" +
+                        "  Sample Rate: {8} Hz\n" +
+                        "  Block Size: {9}\n" +
+                        "  Latency: {10} ms",
+                        error, PA19.PA_GetErrorText(error), host_api_index, input_dev_index, in_dev,
+                        output_dev_index, out_dev, num_channels, sample_rate, block_size, latency_ms);
+                    
+                    // Try to get host error info
+                    try
+                    {
+                        PA19.PaHostErrorInfo hostError = PA19.PA_GetLastHostErrorInfo();
+                        if (hostError.errorCode != 0)
+                        {
+                            errorMsg += string.Format("\n\nHost API Error:\n  Type: {0}\n  Code: {1}\n  Message: {2}",
+                                hostError.hostApiType, hostError.errorCode, hostError.errorText);
+                        }
+                    }
+                    catch { }
+                    
+                    Debug.WriteLine(errorMsg);
+                    MessageBox.Show(errorMsg, "PortAudio Stream Error",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return false;
                 }
@@ -209,7 +250,13 @@ namespace CWExpert
 
                 if (error != 0)
                 {
-                    MessageBox.Show(PA19.PA_GetErrorText(error), "PortAudio Error",
+                    string errorMsg = string.Format("Failed to start audio stream.\n\n" +
+                        "Error Code: {0}\n" +
+                        "Error Message: {1}",
+                        error, PA19.PA_GetErrorText(error));
+                    
+                    Debug.WriteLine(errorMsg);
+                    MessageBox.Show(errorMsg, "PortAudio Stream Start Error",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return false;
                 }
@@ -234,39 +281,84 @@ namespace CWExpert
         public static ArrayList GetPAInputDevices(int hostIndex)
         {
             ArrayList a = new ArrayList();
-            PA19.PaHostApiInfo hostInfo = PA19.PA_GetHostApiInfo(hostIndex);
-            for (int i = 0; i < hostInfo.deviceCount; i++)
+            
+            if (!PA19.IsInitialized)
             {
-                int devIndex = PA19.PA_HostApiDeviceIndexToDeviceIndex(hostIndex, i);
-                PA19.PaDeviceInfo devInfo = PA19.PA_GetDeviceInfo(devIndex);
-                if (devInfo.maxInputChannels > 0)
-                    a.Add(new PADeviceInfo(devInfo.name, i)/* + " - " + devIndex*/);
+                Debug.WriteLine("GetPAInputDevices: PA19 not initialized");
+                return a;
             }
+            
+            try
+            {
+                PA19.PaHostApiInfo hostInfo = PA19.PA_GetHostApiInfo(hostIndex);
+                for (int i = 0; i < hostInfo.deviceCount; i++)
+                {
+                    int devIndex = PA19.PA_HostApiDeviceIndexToDeviceIndex(hostIndex, i);
+                    PA19.PaDeviceInfo devInfo = PA19.PA_GetDeviceInfo(devIndex);
+                    if (devInfo.maxInputChannels > 0)
+                        a.Add(new PADeviceInfo(devInfo.name, i)/* + " - " + devIndex*/);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(string.Format("Error getting PA input devices: {0}", ex.Message));
+            }
+            
             return a;
         }
 
         public static ArrayList GetPAOutputDevices(int hostIndex)
         {
             ArrayList a = new ArrayList();
-            PA19.PaHostApiInfo hostInfo = PA19.PA_GetHostApiInfo(hostIndex);
-            for (int i = 0; i < hostInfo.deviceCount; i++)
+            
+            if (!PA19.IsInitialized)
             {
-                int devIndex = PA19.PA_HostApiDeviceIndexToDeviceIndex(hostIndex, i);
-                PA19.PaDeviceInfo devInfo = PA19.PA_GetDeviceInfo(devIndex);
-                if (devInfo.maxOutputChannels > 0)
-                    a.Add(new PADeviceInfo(devInfo.name, i)/* + " - " + devIndex*/);
+                Debug.WriteLine("GetPAOutputDevices: PA19 not initialized");
+                return a;
             }
+            
+            try
+            {
+                PA19.PaHostApiInfo hostInfo = PA19.PA_GetHostApiInfo(hostIndex);
+                for (int i = 0; i < hostInfo.deviceCount; i++)
+                {
+                    int devIndex = PA19.PA_HostApiDeviceIndexToDeviceIndex(hostIndex, i);
+                    PA19.PaDeviceInfo devInfo = PA19.PA_GetDeviceInfo(devIndex);
+                    if (devInfo.maxOutputChannels > 0)
+                        a.Add(new PADeviceInfo(devInfo.name, i)/* + " - " + devIndex*/);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(string.Format("Error getting PA output devices: {0}", ex.Message));
+            }
+            
             return a;
         }
 
         public static ArrayList GetPAHosts() // returns a text list of driver types
         {
             ArrayList a = new ArrayList();
-            for (int i = 0; i < PA19.PA_GetHostApiCount(); i++)
+            
+            if (!PA19.IsInitialized)
             {
-                PA19.PaHostApiInfo info = PA19.PA_GetHostApiInfo(i);
-                a.Add(info.name);
+                Debug.WriteLine("GetPAHosts: PA19 not initialized");
+                return a;
             }
+            
+            try
+            {
+                for (int i = 0; i < PA19.PA_GetHostApiCount(); i++)
+                {
+                    PA19.PaHostApiInfo info = PA19.PA_GetHostApiInfo(i);
+                    a.Add(info.name);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(string.Format("Error getting PA hosts: {0}", ex.Message));
+            }
+            
             return a;
         }
 

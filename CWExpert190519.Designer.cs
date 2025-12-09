@@ -15,6 +15,9 @@
         {
             Audio.callback_return = 2;
             Audio.StopAudio();
+            
+            // Terminate PA19 if it was initialized
+            PA19.SafeTerminate();
 
             if (disposing && (components != null))
             {

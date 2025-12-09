@@ -177,7 +177,28 @@ namespace CWExpert
             DB.AppDataPath = Application.StartupPath;
             DB.Init();
             Audio.MainForm = this;
-            PA19.PA_Initialize();
+            
+            // Initialize PA19 with comprehensive diagnostics
+            if (!PA19.InitializeWithDiagnostics(showDiagnostics: true))
+            {
+                // Log the error but allow the application to continue
+                // The user has already been shown a diagnostic dialog
+                System.Diagnostics.Debug.WriteLine("PA19 initialization failed: " + PA19.LastInitializationError);
+                
+                // Optionally show a warning that audio functionality will not be available
+                MessageBox.Show(
+                    "Audio subsystem initialization failed. The application will continue, but audio features will not be available.\n\n" +
+                    "Please check the following:\n" +
+                    "1. PA19.dll is present in the application directory\n" +
+                    "2. PA19.dll matches your system architecture (32-bit vs 64-bit)\n" +
+                    "3. All PortAudio dependencies are installed\n" +
+                    "4. Your audio drivers are working properly\n\n" +
+                    "See the detailed error message for more information.",
+                    "Audio Initialization Warning",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            
             SetupForm = new Setup(this);
             cwDecoder = new CWDecode(this);
             btnStartMR.BackColor = Color.LightBlue;
