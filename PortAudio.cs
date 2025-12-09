@@ -406,11 +406,17 @@ namespace CWExpert
             }
             catch (Exception ex)
             {
-                LastInitializationError = string.Format("Unexpected error during PA19 initialization: {0}: {1}\n{2}", 
-                    ex.GetType().Name, ex.Message, ex.StackTrace);
+                // Store full error details including stack trace for diagnostics
+                LastInitializationError = string.Format("Unexpected error during PA19 initialization: {0}: {1}", 
+                    ex.GetType().Name, ex.Message);
+                
+                // Log full stack trace to debug output for troubleshooting
+                Debug.WriteLine(string.Format("PA19 initialization exception: {0}\nStack trace:\n{1}", 
+                    ex.Message, ex.StackTrace));
                 
                 if (showDiagnostics)
                 {
+                    // Show user-friendly message without exposing internal details
                     MessageBox.Show(LastInitializationError + "\n\n" + GetRuntimeDiagnostics(),
                         "PA19 Initialization Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }

@@ -214,7 +214,7 @@ namespace CWExpert
 
                 if (error != 0)
                 {
-                    StringBuilder errorMsg = new StringBuilder();
+                    StringBuilder errorMsg = new StringBuilder(512); // Estimate capacity for better performance
                     errorMsg.AppendLine("Failed to open audio stream.");
                     errorMsg.AppendLine();
                     errorMsg.AppendLine(string.Format("Error Code: {0}", error));
