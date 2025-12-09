@@ -4,6 +4,8 @@ using System.Text;
 using System.Security;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Diagnostics;
+using System.IO;
 
 using PaError = System.Int32;
 using PaDeviceIndex = System.Int32;
@@ -17,6 +19,110 @@ namespace CWExpert
 {
     public class PA19
     {
+        #region Diagnostics
+        
+        private static bool _isInitialized = false;
+        private static string _lastInitializationError = null;
+        
+        /// <summary>
+        /// Flag indicating whether PA19 has been successfully initialized
+        /// </summary>
+        public static bool IsInitialized 
+        { 
+            get { return _isInitialized; }
+            private set { _isInitialized = value; }
+        }
+        
+        /// <summary>
+        /// Stores the last initialization error if initialization failed
+        /// </summary>
+        public static string LastInitializationError 
+        { 
+            get { return _lastInitializationError; }
+            private set { _lastInitializationError = value; }
+        }
+        
+        /// <summary>
+        /// Gets diagnostic information about the runtime environment
+        /// </summary>
+        public static string GetRuntimeDiagnostics()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("=== PA19 Runtime Diagnostics ===");
+            sb.AppendLine(string.Format("OS Version: {0}", Environment.OSVersion));
+            sb.AppendLine(string.Format("CLR Version: {0}", Environment.Version));
+            sb.AppendLine(string.Format("Is 64-bit OS: {0}", Environment.Is64BitOperatingSystem));
+            sb.AppendLine(string.Format("Is 64-bit Process: {0}", Environment.Is64BitProcess));
+            sb.AppendLine(string.Format("Processor Count: {0}", Environment.ProcessorCount));
+            
+            // Note: RuntimeInformation is not available in .NET Framework 4.0
+            // Processor architecture can be inferred from Environment.Is64BitProcess
+            sb.AppendLine(string.Format("Process Architecture: {0}", Environment.Is64BitProcess ? "x64" : "x86"));
+            
+            // Check for PA19.dll
+            string exePath = AppDomain.CurrentDomain.BaseDirectory;
+            string dllPath = Path.Combine(exePath, "PA19.dll");
+            sb.AppendLine(string.Format("Application Path: {0}", exePath));
+            sb.AppendLine(string.Format("PA19.dll Path: {0}", dllPath));
+            sb.AppendLine(string.Format("PA19.dll Exists: {0}", File.Exists(dllPath)));
+            
+            if (File.Exists(dllPath))
+            {
+                FileInfo fi = new FileInfo(dllPath);
+                sb.AppendLine(string.Format("PA19.dll Size: {0} bytes", fi.Length));
+                sb.AppendLine(string.Format("PA19.dll Modified: {0}", fi.LastWriteTime));
+            }
+            
+            return sb.ToString();
+        }
+        
+        /// <summary>
+        /// Attempts to load PA19.dll and verify it's compatible with current process architecture
+        /// </summary>
+        public static bool VerifyDllArchitecture(out string message)
+        {
+            try
+            {
+                // Attempt to load the library
+                IntPtr hModule = LoadLibrary("PA19.dll");
+                if (hModule == IntPtr.Zero)
+                {
+                    int errorCode = Marshal.GetLastWin32Error();
+                    message = string.Format("Failed to load PA19.dll. Error code: {0} (0x{1:X})\n", errorCode, errorCode);
+                    
+                    if (errorCode == 193) // ERROR_BAD_EXE_FORMAT
+                    {
+                        message += "This error typically means the DLL architecture doesn't match the process architecture.\n";
+                        message += string.Format("Current process is {0}.\n", Environment.Is64BitProcess ? "64-bit" : "32-bit");
+                        message += "PA19.dll must be a 32-bit DLL for 32-bit processes or 64-bit DLL for 64-bit processes.";
+                    }
+                    else if (errorCode == 126) // ERROR_MOD_NOT_FOUND
+                    {
+                        message += "The DLL or one of its dependencies could not be found.\n";
+                        message += "Ensure PA19.dll and all required dependencies (like PortAudio runtime) are in the application directory.";
+                    }
+                    
+                    return false;
+                }
+                
+                FreeLibrary(hModule);
+                message = string.Format("PA19.dll loaded successfully. Process is {0}.", Environment.Is64BitProcess ? "64-bit" : "32-bit");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                message = string.Format("Exception while verifying DLL: {0}", ex.Message);
+                return false;
+            }
+        }
+        
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LoadLibrary(string lpFileName);
+        
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool FreeLibrary(IntPtr hModule);
+        
+        #endregion
         #region Constants
 
         public const PaDeviceIndex paNoDevice = (PaDeviceIndex)(-1);
@@ -155,6 +261,201 @@ namespace CWExpert
 
         [DllImport("PA19.dll")]
         public static extern PaError PA_Terminate();
+        
+        /// <summary>
+        /// Initializes PortAudio with comprehensive error handling and diagnostics
+        /// </summary>
+        /// <param name="showDiagnostics">Whether to show diagnostic information on failure</param>
+        /// <returns>True if initialization succeeded, false otherwise</returns>
+        public static bool InitializeWithDiagnostics(bool showDiagnostics = true)
+        {
+            if (IsInitialized)
+            {
+                Debug.WriteLine("PA19 already initialized");
+                return true;
+            }
+            
+            LastInitializationError = null;
+            
+            try
+            {
+                // First, verify the DLL can be loaded and is the correct architecture
+                string dllVerifyMessage;
+                if (!VerifyDllArchitecture(out dllVerifyMessage))
+                {
+                    LastInitializationError = "DLL Architecture Verification Failed:\n" + dllVerifyMessage;
+                    
+                    if (showDiagnostics)
+                    {
+                        string fullDiagnostics = LastInitializationError + "\n\n" + GetRuntimeDiagnostics();
+                        MessageBox.Show(fullDiagnostics, "PA19 DLL Load Error", 
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        
+                        // Log to debug output
+                        Debug.WriteLine(fullDiagnostics);
+                    }
+                    
+                    return false;
+                }
+                
+                Debug.WriteLine("PA19.dll loaded successfully, attempting initialization...");
+                Debug.WriteLine(dllVerifyMessage);
+                
+                // Try to get version info before initializing (this tests if DLL functions are callable)
+                try
+                {
+                    int version = PA_GetVersion();
+                    string versionText = PA_GetVersionText();
+                    Debug.WriteLine(string.Format("PortAudio version: {0} ({1})", version, versionText));
+                }
+                catch (Exception ex)
+                {
+                    LastInitializationError = string.Format("Failed to call PA19 version functions: {0}", ex.Message);
+                    if (showDiagnostics)
+                    {
+                        MessageBox.Show(LastInitializationError + "\n\nThis may indicate PA19.dll is corrupt or incompatible.",
+                            "PA19 Function Call Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                    return false;
+                }
+                
+                // Now initialize
+                PaError error = PA_Initialize();
+                
+                if (error != 0)
+                {
+                    string errorText = PA_GetErrorText(error);
+                    LastInitializationError = string.Format("PA_Initialize failed with error {0}: {1}", error, errorText);
+                    
+                    // Get host error info if available
+                    try
+                    {
+                        PaHostErrorInfo hostError = PA_GetLastHostErrorInfo();
+                        if (hostError.errorCode != 0)
+                        {
+                            LastInitializationError += string.Format("\nHost API Error: {0}, Code: {1}, Message: {2}",
+                                hostError.hostApiType, hostError.errorCode, hostError.errorText);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine(string.Format("Could not retrieve host error info: {0}", ex.Message));
+                    }
+                    
+                    if (showDiagnostics)
+                    {
+                        string fullMessage = LastInitializationError + "\n\n" + GetRuntimeDiagnostics();
+                        MessageBox.Show(fullMessage, "PA19 Initialization Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        Debug.WriteLine(fullMessage);
+                    }
+                    
+                    return false;
+                }
+                
+                IsInitialized = true;
+                Debug.WriteLine("PA19 initialized successfully");
+                
+                // Log available hosts and devices
+                try
+                {
+                    int hostCount = PA_GetHostApiCount();
+                    Debug.WriteLine(string.Format("Available host APIs: {0}", hostCount));
+                    for (int i = 0; i < hostCount; i++)
+                    {
+                        PaHostApiInfo hostInfo = PA_GetHostApiInfo(i);
+                        Debug.WriteLine(string.Format("  Host {0}: {1} ({2} devices)", i, hostInfo.name, hostInfo.deviceCount));
+                    }
+                    
+                    int deviceCount = PA_GetDeviceCount();
+                    Debug.WriteLine(string.Format("Total devices: {0}", deviceCount));
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(string.Format("Could not enumerate devices: {0}", ex.Message));
+                }
+                
+                return true;
+            }
+            catch (DllNotFoundException ex)
+            {
+                LastInitializationError = string.Format("PA19.dll not found: {0}\n\n", ex.Message) +
+                    "Ensure PA19.dll is in the same directory as the application executable.";
+                
+                if (showDiagnostics)
+                {
+                    MessageBox.Show(LastInitializationError + "\n\n" + GetRuntimeDiagnostics(),
+                        "PA19 DLL Not Found", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                
+                return false;
+            }
+            catch (BadImageFormatException ex)
+            {
+                LastInitializationError = string.Format("PA19.dll architecture mismatch: {0}\n\n", ex.Message) +
+                    string.Format("The DLL is not compatible with this {0} process.\n", Environment.Is64BitProcess ? "64-bit" : "32-bit") +
+                    "You need a 32-bit PA19.dll for 32-bit applications or a 64-bit version for 64-bit applications.";
+                
+                if (showDiagnostics)
+                {
+                    MessageBox.Show(LastInitializationError + "\n\n" + GetRuntimeDiagnostics(),
+                        "PA19 Architecture Mismatch", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                
+                return false;
+            }
+            catch (Exception ex)
+            {
+                // Store full error details including stack trace for diagnostics
+                LastInitializationError = string.Format("Unexpected error during PA19 initialization: {0}: {1}", 
+                    ex.GetType().Name, ex.Message);
+                
+                // Log full stack trace to debug output for troubleshooting
+                Debug.WriteLine(string.Format("PA19 initialization exception: {0}\nStack trace:\n{1}", 
+                    ex.Message, ex.StackTrace));
+                
+                if (showDiagnostics)
+                {
+                    // Show user-friendly message without exposing internal details
+                    MessageBox.Show(LastInitializationError + "\n\n" + GetRuntimeDiagnostics(),
+                        "PA19 Initialization Exception", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                
+                return false;
+            }
+        }
+        
+        /// <summary>
+        /// Terminates PortAudio if it was initialized
+        /// </summary>
+        public static void SafeTerminate()
+        {
+            if (!IsInitialized)
+            {
+                return;
+            }
+            
+            try
+            {
+                PaError error = PA_Terminate();
+                if (error != 0)
+                {
+                    Debug.WriteLine(string.Format("PA_Terminate returned error {0}: {1}", error, PA_GetErrorText(error)));
+                }
+                else
+                {
+                    Debug.WriteLine("PA19 terminated successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(string.Format("Error terminating PA19: {0}", ex.Message));
+            }
+            finally
+            {
+                IsInitialized = false;
+            }
+        }
 
         [DllImport("PA19.dll")]
         public static extern PaHostApiIndex PA_GetHostApiCount();
