@@ -179,8 +179,11 @@ namespace CWExpert
         {
             try
             {
-                Debug.WriteLine(string.Format("StartAudio: host={0}, in_dev={1}, out_dev={2}, channels={3}, sample_rate={4}, block_size={5}, latency={6}ms",
-                    host_api_index, input_dev_index, output_dev_index, num_channels, sample_rate, block_size, latency_ms));
+                Debug.WriteLine("StartAudio called");
+                Debug.WriteLine(string.Format("  Host API: {0}", host_api_index));
+                Debug.WriteLine(string.Format("  Input Device: {0}, Output Device: {1}", input_dev_index, output_dev_index));
+                Debug.WriteLine(string.Format("  Channels: {0}, Sample Rate: {1}, Block Size: {2}, Latency: {3}ms",
+                    num_channels, sample_rate, block_size, latency_ms));
                 
                 int in_dev = PA19.PA_HostApiDeviceIndexToDeviceIndex(host_api_index, input_dev_index);
                 int out_dev = PA19.PA_HostApiDeviceIndexToDeviceIndex(host_api_index, output_dev_index);
@@ -211,19 +214,20 @@ namespace CWExpert
 
                 if (error != 0)
                 {
-                    string errorMsg = string.Format("Failed to open audio stream.\n\n" +
-                        "Error Code: {0}\n" +
-                        "Error Message: {1}\n\n" +
-                        "Parameters:\n" +
-                        "  Host API: {2}\n" +
-                        "  Input Device: {3} (resolved to {4})\n" +
-                        "  Output Device: {5} (resolved to {6})\n" +
-                        "  Channels: {7}\n" +
-                        "  Sample Rate: {8} Hz\n" +
-                        "  Block Size: {9}\n" +
-                        "  Latency: {10} ms",
-                        error, PA19.PA_GetErrorText(error), host_api_index, input_dev_index, in_dev,
-                        output_dev_index, out_dev, num_channels, sample_rate, block_size, latency_ms);
+                    StringBuilder errorMsg = new StringBuilder();
+                    errorMsg.AppendLine("Failed to open audio stream.");
+                    errorMsg.AppendLine();
+                    errorMsg.AppendLine(string.Format("Error Code: {0}", error));
+                    errorMsg.AppendLine(string.Format("Error Message: {0}", PA19.PA_GetErrorText(error)));
+                    errorMsg.AppendLine();
+                    errorMsg.AppendLine("Parameters:");
+                    errorMsg.AppendLine(string.Format("  Host API: {0}", host_api_index));
+                    errorMsg.AppendLine(string.Format("  Input Device: {0} (resolved to {1})", input_dev_index, in_dev));
+                    errorMsg.AppendLine(string.Format("  Output Device: {0} (resolved to {1})", output_dev_index, out_dev));
+                    errorMsg.AppendLine(string.Format("  Channels: {0}", num_channels));
+                    errorMsg.AppendLine(string.Format("  Sample Rate: {0} Hz", sample_rate));
+                    errorMsg.AppendLine(string.Format("  Block Size: {0}", block_size));
+                    errorMsg.AppendLine(string.Format("  Latency: {0} ms", latency_ms));
                     
                     // Try to get host error info
                     try
@@ -231,14 +235,18 @@ namespace CWExpert
                         PA19.PaHostErrorInfo hostError = PA19.PA_GetLastHostErrorInfo();
                         if (hostError.errorCode != 0)
                         {
-                            errorMsg += string.Format("\n\nHost API Error:\n  Type: {0}\n  Code: {1}\n  Message: {2}",
-                                hostError.hostApiType, hostError.errorCode, hostError.errorText);
+                            errorMsg.AppendLine();
+                            errorMsg.AppendLine("Host API Error:");
+                            errorMsg.AppendLine(string.Format("  Type: {0}", hostError.hostApiType));
+                            errorMsg.AppendLine(string.Format("  Code: {0}", hostError.errorCode));
+                            errorMsg.AppendLine(string.Format("  Message: {0}", hostError.errorText));
                         }
                     }
                     catch { }
                     
-                    Debug.WriteLine(errorMsg);
-                    MessageBox.Show(errorMsg, "PortAudio Stream Error",
+                    string finalErrorMsg = errorMsg.ToString();
+                    Debug.WriteLine(finalErrorMsg);
+                    MessageBox.Show(finalErrorMsg, "PortAudio Stream Error",
                         MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return false;
                 }

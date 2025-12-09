@@ -21,15 +21,26 @@ namespace CWExpert
     {
         #region Diagnostics
         
+        private static bool _isInitialized = false;
+        private static string _lastInitializationError = null;
+        
         /// <summary>
         /// Flag indicating whether PA19 has been successfully initialized
         /// </summary>
-        public static bool IsInitialized { get; private set; } = false;
+        public static bool IsInitialized 
+        { 
+            get { return _isInitialized; }
+            private set { _isInitialized = value; }
+        }
         
         /// <summary>
         /// Stores the last initialization error if initialization failed
         /// </summary>
-        public static string LastInitializationError { get; private set; } = null;
+        public static string LastInitializationError 
+        { 
+            get { return _lastInitializationError; }
+            private set { _lastInitializationError = value; }
+        }
         
         /// <summary>
         /// Gets diagnostic information about the runtime environment
@@ -77,7 +88,7 @@ namespace CWExpert
                 if (hModule == IntPtr.Zero)
                 {
                     int errorCode = Marshal.GetLastWin32Error();
-                    message = string.Format("Failed to load PA19.dll. Error code: {0} (0x{0:X})\n", errorCode);
+                    message = string.Format("Failed to load PA19.dll. Error code: {0} (0x{1:X})\n", errorCode, errorCode);
                     
                     if (errorCode == 193) // ERROR_BAD_EXE_FORMAT
                     {
